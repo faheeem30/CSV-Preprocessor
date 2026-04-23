@@ -1,0 +1,911 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Data Quality Pipeline</title>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet"/>
+<style>
+:root {
+  --bg: #0b0e14;
+  --surface: #111520;
+  --card: #161b28;
+  --border: #1f2a3d;
+  --accent: #00d9a6;
+  --accent2: #4f8ef7;
+  --warn: #f59e0b;
+  --danger: #ef4444;
+  --text: #e2e8f0;
+  --muted: #64748b;
+  --dim: #94a3b8;
+  --mono: 'JetBrains Mono', monospace;
+  --sans: 'Syne', sans-serif;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: var(--sans); background: var(--bg); color: var(--text); min-height: 100vh; overflow-x: hidden; }
+body::before {
+  content: '';
+  position: fixed; inset: 0;
+  background:
+    radial-gradient(ellipse 60% 40% at 80% 10%, rgba(0,217,166,0.04) 0%, transparent 70%),
+    radial-gradient(ellipse 50% 60% at 10% 80%, rgba(79,142,247,0.04) 0%, transparent 70%);
+  pointer-events: none; z-index: 0;
+}
+.app { position: relative; z-index: 1; display: flex; flex-direction: column; min-height: 100vh; }
+
+/* Header */
+header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 18px 40px;
+  border-bottom: 1px solid var(--border);
+  background: rgba(11,14,20,0.85);
+  backdrop-filter: blur(12px);
+  position: sticky; top: 0; z-index: 100;
+}
+.logo { display: flex; align-items: center; gap: 12px; }
+.logo-icon {
+  width: 36px; height: 36px;
+  background: linear-gradient(135deg, var(--accent), var(--accent2));
+  border-radius: 8px;
+  display: flex; align-items: center; justify-content: center; font-size: 18px;
+}
+.logo-text { font-size: 15px; font-weight: 700; letter-spacing: 0.03em; }
+.logo-sub { font-size: 11px; color: var(--muted); font-family: var(--mono); }
+.header-status { display: flex; align-items: center; gap: 8px; font-family: var(--mono); font-size: 11px; color: var(--muted); }
+.pulse { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); animation: pulse 2s infinite; }
+@keyframes pulse {
+  0%,100% { opacity:1; box-shadow:0 0 0 0 rgba(0,217,166,0.4); }
+  50% { opacity:0.7; box-shadow:0 0 0 5px rgba(0,217,166,0); }
+}
+
+/* Main */
+main { flex: 1; padding: 36px 40px; max-width: 1400px; margin: 0 auto; width: 100%; }
+
+/* Steps */
+.steps {
+  display: flex; gap: 0; margin-bottom: 32px;
+  border: 1px solid var(--border); border-radius: 10px; overflow: hidden;
+}
+.step {
+  flex: 1; padding: 14px 10px; text-align: center;
+  font-size: 12px; font-weight: 600; letter-spacing: 0.04em;
+  cursor: pointer; transition: all 0.2s; color: var(--muted);
+  border-right: 1px solid var(--border);
+}
+.step:last-child { border-right: none; }
+.step.active { color: var(--accent); background: rgba(0,217,166,0.06); }
+.step.done { color: var(--accent2); }
+.step .step-num { display: block; font-size: 10px; font-family: var(--mono); margin-bottom: 2px; opacity: 0.5; }
+.step.active .step-num { opacity: 1; color: var(--accent); }
+
+/* Panels */
+.panel { display: none; animation: fadeUp 0.3s ease; }
+.panel.active { display: block; }
+@keyframes fadeUp {
+  from { opacity:0; transform:translateY(12px); }
+  to   { opacity:1; transform:translateY(0); }
+}
+
+/* Cards */
+.card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 28px; margin-bottom: 20px; }
+.card-title {
+  font-size: 13px; font-weight: 700; letter-spacing: 0.06em;
+  text-transform: uppercase; color: var(--dim); margin-bottom: 20px;
+  display: flex; align-items: center; gap: 8px;
+}
+.card-title::before { content:''; display:inline-block; width:3px; height:14px; background:var(--accent); border-radius:2px; }
+
+/* Upload */
+.upload-zone {
+  border: 2px dashed var(--border); border-radius: 12px;
+  padding: 60px 40px; text-align: center; cursor: pointer;
+  transition: all 0.25s; position: relative; overflow: hidden;
+}
+.upload-zone:hover, .upload-zone.dragover { border-color: var(--accent); background: rgba(0,217,166,0.04); }
+.upload-zone input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+.upload-icon { font-size: 48px; margin-bottom: 16px; }
+.upload-title { font-size: 18px; font-weight: 700; margin-bottom: 8px; }
+.upload-hint { font-size: 13px; color: var(--muted); }
+.file-pill {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 8px 16px;
+  background: rgba(0,217,166,0.1); border: 1px solid rgba(0,217,166,0.3);
+  border-radius: 20px; font-size: 12px; font-family: var(--mono); color: var(--accent); margin-top: 16px;
+}
+
+/* Stat grid */
+.stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px,1fr)); gap: 16px; }
+.stat-box {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 10px; padding: 20px 18px; position: relative; overflow: hidden;
+}
+.stat-box::before { content:''; position:absolute; top:0; left:0; right:0; height:2px; }
+.stat-box.green::before { background: var(--accent); }
+.stat-box.blue::before  { background: var(--accent2); }
+.stat-box.warn::before  { background: var(--warn); }
+.stat-box.danger::before{ background: var(--danger); }
+.stat-box.orange::before{ background: #fb923c; }
+.stat-label { font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); margin-bottom: 10px; }
+.stat-value { font-size: 28px; font-weight: 800; font-family: var(--mono); }
+.stat-box.green  .stat-value { color: var(--accent); }
+.stat-box.blue   .stat-value { color: var(--accent2); }
+.stat-box.warn   .stat-value { color: var(--warn); }
+.stat-box.danger .stat-value { color: var(--danger); }
+.stat-box.orange .stat-value { color: #fb923c; }
+.stat-sub { font-size: 11px; color: var(--muted); margin-top: 4px; }
+
+/* Quality bars */
+.quality-bars { display: flex; flex-direction: column; gap: 14px; }
+.qbar-row { display: flex; align-items: center; gap: 12px; }
+.qbar-label { font-size: 11px; font-family: var(--mono); color: var(--dim); width: 200px; min-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.qbar-track { flex: 1; height: 6px; background: var(--border); border-radius: 3px; overflow: hidden; }
+.qbar-fill { height: 100%; border-radius: 3px; transition: width 1s ease; }
+.qbar-fill.ok   { background: var(--accent); }
+.qbar-fill.warn { background: var(--warn); }
+.qbar-fill.bad  { background: var(--danger); }
+.qbar-count { font-size: 11px; font-family: var(--mono); color: var(--muted); width: 80px; text-align: right; }
+
+/* Table */
+.table-wrap { overflow: auto; max-height: 420px; border-radius: 8px; border: 1px solid var(--border); }
+table { border-collapse: collapse; width: 100%; min-width: 600px; }
+thead { position: sticky; top: 0; z-index: 10; }
+thead tr { background: var(--surface); }
+th { padding: 10px 14px; text-align: left; white-space: nowrap; font-size: 10px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); border-bottom: 1px solid var(--border); }
+td { padding: 9px 14px; font-size: 12px; font-family: var(--mono); border-bottom: 1px solid rgba(31,42,61,0.5); color: var(--dim); white-space: nowrap; }
+tr:hover td { background: rgba(255,255,255,0.02); color: var(--text); }
+td.null-cell    { color: var(--danger); font-style: italic; }
+td.neg-cell     { color: #fb923c; font-weight: 600; }
+
+/* Log box */
+.log-box {
+  background: #080b11; border: 1px solid var(--border); border-radius: 8px;
+  padding: 20px; font-family: var(--mono); font-size: 12px; line-height: 1.8;
+  max-height: 320px; overflow-y: auto; color: var(--dim);
+}
+.log-line { display: flex; gap: 12px; }
+.log-time  { color: var(--muted); min-width: 90px; }
+.log-level-info  { color: var(--accent2); }
+.log-level-warn  { color: var(--warn); }
+.log-level-error { color: var(--danger); }
+.log-level-ok    { color: var(--accent); }
+.log-level-fix   { color: #fb923c; }
+
+/* Buttons */
+.btn-row { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 20px; }
+.btn {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 11px 22px; border: 1px solid; border-radius: 8px;
+  font-family: var(--sans); font-size: 13px; font-weight: 600;
+  cursor: pointer; transition: all 0.2s; text-decoration: none;
+}
+.btn-primary { background: var(--accent); border-color: var(--accent); color: #050a07; }
+.btn-primary:hover { background: #00f5b8; }
+.btn-ghost   { background: transparent; border-color: var(--border); color: var(--dim); }
+.btn-ghost:hover { border-color: var(--accent); color: var(--accent); }
+.btn-danger  { background: transparent; border-color: var(--danger); color: var(--danger); }
+.btn-danger:hover { background: rgba(239,68,68,0.1); }
+.btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* Progress */
+.progress-wrap { margin: 20px 0; }
+.progress-label { font-size: 12px; color: var(--muted); margin-bottom: 8px; font-family: var(--mono); }
+.progress-track { height: 4px; background: var(--border); border-radius: 2px; overflow: hidden; }
+.progress-fill  { height: 100%; background: linear-gradient(90deg, var(--accent), var(--accent2)); border-radius: 2px; transition: width 0.4s ease; }
+
+/* Tags */
+.tag { display: inline-block; padding: 3px 10px; border-radius: 12px; font-size: 11px; font-family: var(--mono); }
+.tag-green  { background: rgba(0,217,166,0.12);  color: var(--accent);  border: 1px solid rgba(0,217,166,0.25); }
+.tag-yellow { background: rgba(245,158,11,0.12); color: var(--warn);    border: 1px solid rgba(245,158,11,0.25); }
+.tag-red    { background: rgba(239,68,68,0.12);  color: var(--danger);  border: 1px solid rgba(239,68,68,0.25); }
+.tag-blue   { background: rgba(79,142,247,0.12); color: var(--accent2); border: 1px solid rgba(79,142,247,0.25); }
+.tag-orange { background: rgba(251,146,60,0.12); color: #fb923c;        border: 1px solid rgba(251,146,60,0.3); }
+
+/* Report rows */
+.report-grid { display: flex; flex-direction: column; gap: 10px; }
+.report-row {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  padding: 12px 16px; background: var(--surface); border: 1px solid var(--border);
+  border-radius: 8px; font-size: 13px; gap: 12px;
+}
+.report-key { color: var(--dim); flex: 1; }
+.report-val { font-family: var(--mono); font-weight: 600; color: var(--text); white-space: nowrap; }
+
+/* Two col */
+.two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+@media (max-width: 900px) { .two-col { grid-template-columns: 1fr; } }
+
+/* Toast */
+#toast {
+  position: fixed; bottom: 30px; right: 30px; z-index: 999;
+  background: var(--card); border: 1px solid var(--border);
+  border-radius: 10px; padding: 14px 20px;
+  font-size: 13px; color: var(--text);
+  display: flex; align-items: center; gap: 10px;
+  transform: translateY(80px); opacity: 0;
+  transition: all 0.3s cubic-bezier(.68,-0.55,.27,1.55);
+  box-shadow: 0 8px 32px rgba(0,0,0,0.4); max-width: 320px;
+}
+#toast.show { transform: translateY(0); opacity: 1; }
+
+/* Col chips */
+.col-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.col-chip {
+  padding: 4px 12px; border-radius: 6px;
+  font-size: 11px; font-family: var(--mono);
+  background: var(--surface); border: 1px solid var(--border); color: var(--dim);
+}
+.col-chip.null-col    { border-color: var(--danger); color: var(--danger); }
+.col-chip.partial-col { border-color: var(--warn);   color: var(--warn); }
+.col-chip.neg-col     { border-color: #fb923c;        color: #fb923c; }
+.col-chip.ok-col      { border-color: rgba(0,217,166,0.3); color: var(--accent); }
+
+/* Info banner */
+.info-banner {
+  background: rgba(79,142,247,0.07);
+  border: 1px solid rgba(79,142,247,0.2);
+  border-radius: 8px; padding: 14px 18px;
+  font-size: 13px; color: var(--dim); line-height: 1.6;
+  margin-bottom: 20px;
+}
+.info-banner strong { color: var(--accent2); }
+</style>
+</head>
+<body>
+<div class="app">
+
+<!-- Header -->
+<header>
+  <div class="logo">
+    <div class="logo-icon">⚡</div>
+    <div>
+      <div class="logo-text">DataQuality Pipeline</div>
+      <div class="logo-sub">ETL · CLEAN · ANALYZE</div>
+    </div>
+  </div>
+  <div class="header-status">
+    <div class="pulse"></div>
+    <span id="header-file">No file loaded</span>
+  </div>
+</header>
+
+<!-- Main -->
+<main>
+
+  <!-- Step Tabs -->
+  <div class="steps">
+    <div class="step active" onclick="goStep(0)"><span class="step-num">01</span>UPLOAD</div>
+    <div class="step" onclick="goStep(1)"><span class="step-num">02</span>QUALITY CHECK</div>
+    <div class="step" onclick="goStep(2)"><span class="step-num">03</span>TRANSFORM</div>
+    <div class="step" onclick="goStep(3)"><span class="step-num">04</span>RESULTS</div>
+    <div class="step" onclick="goStep(4)"><span class="step-num">05</span>EXPORT</div>
+  </div>
+
+  <!-- ── PANEL 0: Upload ── -->
+  <div class="panel active" id="panel-0">
+    <div class="info-banner">
+      <strong>Universal CSV Cleaner</strong> — Works with any CSV file: sales data, sensor readings, surveys, financial records, medical data, and more.
+      Automatically detects column types, fixes nulls, removes duplicates, corrects impossible negatives, and flags outliers.
+    </div>
+    <div class="card">
+      <div class="card-title">Load CSV File</div>
+      <div class="upload-zone" id="drop-zone">
+        <input type="file" id="file-input" accept=".csv,.tsv"/>
+        <div class="upload-icon">📂</div>
+        <div class="upload-title">Drop any CSV / TSV here</div>
+        <div class="upload-hint">Auto-detects delimiter · handles NA/null/empty · any column names</div>
+        <div id="file-pill" style="display:none" class="file-pill">
+          <span>📄</span><span id="file-name-pill"></span>
+        </div>
+      </div>
+      <div class="btn-row">
+        <button class="btn btn-primary" id="run-btn" disabled onclick="runPipeline()">▶ Run Pipeline</button>
+        <button class="btn btn-danger" onclick="clearAll()">✕ Clear</button>
+      </div>
+    </div>
+    <div class="card" id="preview-card" style="display:none">
+      <div class="card-title">File Preview</div>
+      <div id="col-chips" class="col-chips"></div>
+      <div id="preview-table" class="table-wrap" style="margin-top:16px"></div>
+      <div style="margin-top:10px;font-size:12px;color:var(--muted)">
+        Showing first 10 rows ·
+        <span id="total-rows"></span> total rows ·
+        <span id="total-cols"></span> columns ·
+        <span style="color:#fb923c" id="neg-hint"></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── PANEL 1: Quality Check ── -->
+  <div class="panel" id="panel-1">
+    <div class="two-col">
+      <div>
+        <div class="card">
+          <div class="card-title">Summary</div>
+          <div class="stat-grid" id="qc-stats"></div>
+        </div>
+        <div class="card">
+          <div class="card-title">Planned Actions</div>
+          <div class="report-grid" id="qc-actions"></div>
+        </div>
+      </div>
+      <div>
+        <div class="card">
+          <div class="card-title">Null Coverage by Column</div>
+          <div class="quality-bars" id="null-bars"></div>
+        </div>
+        <div class="card">
+          <div class="card-title">Invalid Values (≤ 0) Detected</div>
+          <div class="report-grid" id="neg-bars"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── PANEL 2: Transform ── -->
+  <div class="panel" id="panel-2">
+    <div class="card">
+      <div class="card-title">Processing Log</div>
+      <div class="progress-wrap">
+        <div class="progress-label" id="progress-label">Idle</div>
+        <div class="progress-track">
+          <div class="progress-fill" id="progress-fill" style="width:0%"></div>
+        </div>
+      </div>
+      <div class="log-box" id="log-box">
+        <div class="log-line"><span class="log-time">--:--:--</span><span class="log-level-info">INFO&nbsp;</span><span>&nbsp;Waiting to start…</span></div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">Outlier Flags (IQR — rows kept)</div>
+      <div id="outlier-grid" class="report-grid"></div>
+    </div>
+  </div>
+
+  <!-- ── PANEL 3: Results ── -->
+  <div class="panel" id="panel-3">
+    <div class="stat-grid" style="margin-bottom:20px" id="result-stats"></div>
+    <div class="card">
+      <div class="card-title">Cleaned Data Preview</div>
+      <div id="clean-table" class="table-wrap"></div>
+      <div style="margin-top:10px;font-size:12px;color:var(--muted)">Showing first 50 rows of cleaned output</div>
+    </div>
+  </div>
+
+  <!-- ── PANEL 4: Export ── -->
+  <div class="panel" id="panel-4">
+    <div class="two-col">
+      <div class="card">
+        <div class="card-title">Download Files</div>
+        <div class="report-grid">
+          <div class="report-row">
+            <div>
+              <div style="font-weight:700;margin-bottom:4px">cleaned_output.csv</div>
+              <div style="font-size:12px;color:var(--muted)">All rows cleaned — nulls filled, negatives fixed, all-null cols dropped</div>
+            </div>
+            <button class="btn btn-primary" onclick="downloadCSV()" style="white-space:nowrap">⬇ CSV</button>
+          </div>
+          <div class="report-row">
+            <div>
+              <div style="font-weight:700;margin-bottom:4px">data_quality_report.txt</div>
+              <div style="font-size:12px;color:var(--muted)">Full analysis: nulls, negatives, duplicates, outliers, actions taken</div>
+            </div>
+            <button class="btn btn-ghost" onclick="downloadReport()" style="white-space:nowrap">⬇ TXT</button>
+          </div>
+          <div class="report-row">
+            <div>
+              <div style="font-weight:700;margin-bottom:4px">insert.sql</div>
+              <div style="font-size:12px;color:var(--muted)">PostgreSQL INSERT statements for all cleaned rows</div>
+            </div>
+            <button class="btn btn-ghost" onclick="downloadSQL()" style="white-space:nowrap">⬇ SQL</button>
+          </div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-title">Pipeline Summary</div>
+        <div id="final-summary" class="report-grid"></div>
+      </div>
+    </div>
+  </div>
+
+</main>
+</div>
+
+<!-- Toast -->
+<div id="toast"><span id="toast-icon">✅</span><span id="toast-msg"></span></div>
+
+<script>
+// ── State ──────────────────────────────────────────────────────────────────────
+let S = { rawData:[], cleanData:[], headers:[], cleanHeaders:[], fileName:'', stats:null, issues:null, report:'' };
+
+// ── NA string detection ───────────────────────────────────────────────────────
+const NA_SET = new Set(['na','n/a','nan','null','none','--','-','','undefined','nil']);
+function isNA(v) {
+  if (v === null || v === undefined) return true;
+  return NA_SET.has(String(v).trim().toLowerCase());
+}
+
+// ── Always-positive keywords (mirrors Python) ─────────────────────────────────
+const ALWAYS_POS_KW = [
+  'price','cost','amount','revenue','sales','salary','wage','fee','tax',
+  'income','profit','budget','spend','payment','quantity','qty','count',
+  'total','units','volume','stock','age','height','weight','distance',
+  'size','area','duration','pm2','pm10','humidity','concentration',
+  'pressure','speed','radiation','population','score','rating','rank',
+  'benzene','toluene','ozone','sulfur','nitrogen','oxygen'
+];
+
+function shouldBePositive(colName, values) {
+  const name = colName.toLowerCase();
+  if (ALWAYS_POS_KW.some(kw => name.includes(kw))) return true;
+  const valid = values.filter(v => !isNA(v) && !isNaN(parseFloat(v)));
+  if (!valid.length) return false;
+  const pctPos = valid.filter(v => parseFloat(v) > 0).length / valid.length;
+  return pctPos >= 0.95;
+}
+
+// ── CSV Parser ────────────────────────────────────────────────────────────────
+function parseCSV(text) {
+  text = text.replace(/\r\n/g,'\n').replace(/\r/g,'\n');
+  const lines = text.trim().split('\n');
+  if (!lines.length) return {headers:[],rows:[]};
+  // detect delimiter
+  const dl = [',','\t',';','|'];
+  let delim = ',', mx = 0;
+  for (const d of dl) {
+    const n = (lines[0].match(new RegExp('\\'+d,'g'))||[]).length;
+    if (n > mx) { mx=n; delim=d; }
+  }
+  function parseLine(line) {
+    const res=[]; let inQ=false, cur='';
+    for (let i=0;i<line.length;i++) {
+      const ch=line[i];
+      if (ch==='"') { if(inQ&&line[i+1]==='"'){cur+='"';i++;}else inQ=!inQ; }
+      else if (ch===delim&&!inQ) { res.push(cur.trim()); cur=''; }
+      else cur+=ch;
+    }
+    res.push(cur.trim()); return res;
+  }
+  const headers = parseLine(lines[0]);
+  const rows = lines.slice(1).filter(l=>l.trim()).map(l=>{
+    const vals=parseLine(l); const obj={};
+    headers.forEach((h,i)=>{ obj[h]=vals[i]!==undefined?vals[i]:''; });
+    return obj;
+  });
+  return {headers,rows};
+}
+
+// ── Numeric detection ─────────────────────────────────────────────────────────
+function isNumericCol(rows, col) {
+  const nonNull = rows.filter(r=>!isNA(r[col]));
+  if (!nonNull.length) return false;
+  return nonNull.filter(r=>!isNaN(parseFloat(r[col]))).length / nonNull.length > 0.8;
+}
+
+function colValues(rows, col) { return rows.map(r=>r[col]); }
+
+// ── Median ────────────────────────────────────────────────────────────────────
+function median(arr) {
+  const s = [...arr].filter(v=>!isNaN(v)).sort((a,b)=>a-b);
+  if (!s.length) return 0;
+  const m = Math.floor(s.length/2);
+  return s.length%2 ? s[m] : (s[m-1]+s[m])/2;
+}
+
+// ── Quality Check ─────────────────────────────────────────────────────────────
+function checkQuality(headers, rows) {
+  const totalRows = rows.length;
+  const nullCounts={}, allNullCols=[], numericCols=[], invalidNegCounts={};
+  headers.forEach(h=>{
+    const n = rows.filter(r=>isNA(r[h])).length;
+    nullCounts[h]=n;
+    if(n===totalRows) allNullCols.push(h);
+  });
+  headers.forEach(h=>{ if(isNumericCol(rows,h)) numericCols.push(h); });
+  numericCols.forEach(col=>{
+    const vals = colValues(rows, col);
+    if (shouldBePositive(col, vals)) {
+      const n = rows.filter(r=>!isNA(r[col])&&parseFloat(r[col])<=0).length;
+      if(n>0) invalidNegCounts[col]=n;
+    }
+  });
+  const seen=new Set(); let duplicates=0;
+  rows.forEach(r=>{ const k=JSON.stringify(r); if(seen.has(k)) duplicates++; else seen.add(k); });
+  const totalNulls = Object.values(nullCounts).reduce((a,b)=>a+b,0);
+  return {totalRows, totalCols:headers.length, totalNulls, nullCounts, allNullCols, numericCols, duplicates, invalidNegCounts};
+}
+
+// ── Transform ─────────────────────────────────────────────────────────────────
+function transformData(headers, rows, issues) {
+  const {allNullCols, numericCols} = issues;
+
+  // 1. Drop all-null cols
+  const keepHeaders = headers.filter(h=>!allNullCols.includes(h));
+
+  // 2. Remove duplicates
+  const seen=new Set();
+  let cleaned = rows.filter(r=>{ const k=JSON.stringify(r); if(seen.has(k)) return false; seen.add(k); return true; });
+  const duplicatesRemoved = rows.length - cleaned.length;
+
+  // 3. Fill NaN with median
+  let nullFilled=0;
+  const fillValues={};
+  keepHeaders.forEach(col=>{
+    if(!numericCols.includes(col)) return;
+    const valids = cleaned.filter(r=>!isNA(r[col])).map(r=>parseFloat(r[col]));
+    const med = median(valids);
+    fillValues[col]=+med.toFixed(4);
+    cleaned = cleaned.map(r=>{
+      if(isNA(r[col])){ nullFilled++; return {...r,[col]:med.toFixed(4)}; }
+      return r;
+    });
+  });
+
+  // 4. Fix invalid negatives/zeros (universal)
+  const negativeFixes={};
+  keepHeaders.forEach(col=>{
+    if(!numericCols.includes(col)) return;
+    const vals = colValues(cleaned, col);
+    if(!shouldBePositive(col, vals)) return;
+    const invalid = cleaned.filter(r=>parseFloat(r[col])<=0);
+    if(!invalid.length) return;
+    const validVals = cleaned.filter(r=>parseFloat(r[col])>0).map(r=>parseFloat(r[col]));
+    const med = median(validVals);
+    if(isNaN(med)) return;
+    let fixCount=0;
+    cleaned = cleaned.map(r=>{
+      if(parseFloat(r[col])<=0){ fixCount++; return {...r,[col]:med.toFixed(4)}; }
+      return r;
+    });
+    if(fixCount>0) negativeFixes[col]={count:fixCount, medianUsed:+med.toFixed(4)};
+  });
+  const totalNegFixed = Object.values(negativeFixes).reduce((a,v)=>a+v.count,0);
+
+  // 5. Outlier detection (IQR)
+  const outlierFlags={};
+  keepHeaders.forEach(col=>{
+    if(!numericCols.includes(col)) return;
+    const vals = cleaned.map(r=>parseFloat(r[col])).filter(v=>!isNaN(v)).sort((a,b)=>a-b);
+    if(vals.length<4) return;
+    const q1=vals[Math.floor(vals.length*0.25)], q3=vals[Math.floor(vals.length*0.75)];
+    const iqr=q3-q1, lo=q1-1.5*iqr, hi=q3+1.5*iqr;
+    const n=vals.filter(v=>v<lo||v>hi).length;
+    if(n>0) outlierFlags[col]=n;
+  });
+
+  return {
+    headers: keepHeaders, rows: cleaned,
+    stats:{
+      originalRows:rows.length, cleanedRows:cleaned.length,
+      originalCols:headers.length, remainingCols:keepHeaders.length,
+      allNullColsDropped:allNullCols, duplicatesRemoved, nullFilled,
+      fillValues, negativeFixes, totalNegFixed, outlierFlags,
+    }
+  };
+}
+
+// ── Render Table ──────────────────────────────────────────────────────────────
+function renderTable(headers, rows, id, maxRows=50, highlightBad=false) {
+  const el = document.getElementById(id);
+  if(!rows.length){ el.innerHTML='<div style="padding:40px;text-align:center;color:var(--muted)">No data</div>'; return; }
+  const display = rows.slice(0,maxRows);
+  let html='<table><thead><tr>'+headers.map(h=>`<th title="${h}">${h.length>22?h.slice(0,20)+'…':h}</th>`).join('')+'</tr></thead><tbody>';
+  display.forEach(r=>{
+    html+='<tr>'+headers.map(h=>{
+      const v=r[h];
+      if(highlightBad && isNA(v)) return `<td class="null-cell">NULL</td>`;
+      if(highlightBad && !isNaN(parseFloat(v)) && parseFloat(v)<0) return `<td class="neg-cell">${v}</td>`;
+      return `<td>${v!==undefined?v:''}</td>`;
+    }).join('')+'</tr>';
+  });
+  html+='</tbody></table>';
+  el.innerHTML=html;
+}
+
+// ── Log ──────────────────────────────────────────────────────────────────────
+function log(msg, level='info') {
+  const box=document.getElementById('log-box');
+  const t=new Date().toTimeString().slice(0,8);
+  const map={info:'log-level-info',warn:'log-level-warn',error:'log-level-error',ok:'log-level-ok',fix:'log-level-fix'};
+  const lbl={info:'INFO ',warn:'WARN ',error:'ERROR',ok:'OK   ',fix:'FIX  '};
+  const line=document.createElement('div');
+  line.className='log-line';
+  line.innerHTML=`<span class="log-time">${t}</span><span class="${map[level]}">${lbl[level]}</span><span>&nbsp;${msg}</span>`;
+  box.appendChild(line); box.scrollTop=box.scrollHeight;
+}
+function setProgress(pct,label){ document.getElementById('progress-fill').style.width=pct+'%'; document.getElementById('progress-label').textContent=label; }
+
+// ── Toast ─────────────────────────────────────────────────────────────────────
+function toast(msg,icon='✅'){
+  const t=document.getElementById('toast');
+  document.getElementById('toast-msg').textContent=msg;
+  document.getElementById('toast-icon').textContent=icon;
+  t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),3200);
+}
+
+// ── Steps ─────────────────────────────────────────────────────────────────────
+function goStep(n){
+  if(n>0&&!S.rawData.length) return;
+  document.querySelectorAll('.panel').forEach((p,i)=>p.classList.toggle('active',i===n));
+  document.querySelectorAll('.step').forEach((s,i)=>{
+    s.classList.toggle('active',i===n);
+    if(i<n) s.classList.add('done'); else s.classList.remove('done');
+  });
+}
+
+// ── File load ─────────────────────────────────────────────────────────────────
+document.getElementById('file-input').addEventListener('change',e=>{ if(e.target.files[0]) loadFile(e.target.files[0]); });
+const dz=document.getElementById('drop-zone');
+dz.addEventListener('dragover',e=>{e.preventDefault();dz.classList.add('dragover');});
+dz.addEventListener('dragleave',()=>dz.classList.remove('dragover'));
+dz.addEventListener('drop',e=>{e.preventDefault();dz.classList.remove('dragover');if(e.dataTransfer.files[0]) loadFile(e.dataTransfer.files[0]);});
+
+function loadFile(file) {
+  const reader=new FileReader();
+  reader.onload=ev=>{
+    const {headers,rows}=parseCSV(ev.target.result);
+    if(!headers.length){toast('Could not parse file','❌');return;}
+    S.rawData=rows; S.headers=headers; S.fileName=file.name;
+    S.issues=checkQuality(headers,rows);
+    document.getElementById('file-name-pill').textContent=file.name;
+    document.getElementById('file-pill').style.display='inline-flex';
+    document.getElementById('header-file').textContent=file.name+' · '+rows.length+' rows';
+    document.getElementById('run-btn').disabled=false;
+    document.getElementById('total-rows').textContent=rows.length+' total rows';
+    document.getElementById('total-cols').textContent=headers.length+' columns';
+
+    // neg hint
+    const negTotal=Object.values(S.issues.invalidNegCounts).reduce((a,b)=>a+b,0);
+    document.getElementById('neg-hint').textContent=negTotal?`⚠ ${negTotal} invalid negative/zero values detected`:'';
+
+    // col chips
+    const el=document.getElementById('col-chips');
+    el.innerHTML=headers.map(h=>{
+      const n=S.issues.nullCounts[h]||0;
+      const isNeg=!!S.issues.invalidNegCounts[h];
+      const pct=n/rows.length;
+      let cls='ok-col';
+      if(pct===1) cls='null-col';
+      else if(isNeg) cls='neg-col';
+      else if(pct>0) cls='partial-col';
+      return `<div class="col-chip ${cls}" title="${n} nulls${isNeg?' · has invalid values':''}">${h.length>20?h.slice(0,18)+'…':h}</div>`;
+    }).join('');
+
+    renderTable(headers,rows,'preview-table',10,true);
+    document.getElementById('preview-card').style.display='block';
+    toast(`Loaded ${rows.length} rows × ${headers.length} cols`,'📂');
+  };
+  reader.readAsText(file);
+}
+
+// ── Run Pipeline ──────────────────────────────────────────────────────────────
+async function runPipeline() {
+  if(!S.rawData.length) return;
+  const issues=S.issues;
+  goStep(2);
+  document.getElementById('log-box').innerHTML='';
+  setProgress(0,'Starting pipeline…');
+
+  await delay(200);
+  log('Pipeline started','ok');
+  log(`Input: ${S.rawData.length} rows × ${S.headers.length} columns`);
+  setProgress(12,'Step 1 — Quality check…');
+
+  await delay(350);
+  populateQualityPanel(issues);
+  log(`Nulls: ${issues.totalNulls} total across ${Object.keys(issues.cols_with_nulls||{}).length||Object.entries(issues.nullCounts).filter(([,v])=>v>0).length} columns`);
+  log(`All-null columns to DROP: ${issues.allNullCols.length>0?issues.allNullCols.join(', '):'none'}`);
+  log(`Duplicates: ${issues.duplicates}`);
+
+  const negTotal=Object.values(issues.invalidNegCounts).reduce((a,b)=>a+b,0);
+  if(negTotal>0) {
+    Object.entries(issues.invalidNegCounts).forEach(([col,n])=>log(`Invalid (<=0) in "${col}": ${n} values`,'warn'));
+  }
+  setProgress(28,'Step 2 — Dropping all-null columns…');
+
+  await delay(350);
+  log(`Dropped ${issues.allNullCols.length} all-null column(s)`);
+  setProgress(44,'Step 3 — Removing duplicates…');
+
+  await delay(300);
+  log(`Removed ${issues.duplicates} duplicate row(s)`);
+  setProgress(58,'Step 4 — Filling NaN with column medians…');
+
+  await delay(400);
+  const result=transformData(S.headers,S.rawData,issues);
+  S.cleanData=result.rows; S.cleanHeaders=result.headers; S.stats=result.stats;
+  log(`Filled ${result.stats.nullFilled} NaN values with column medians`);
+  setProgress(72,'Step 5 — Fixing invalid negatives/zeros…');
+
+  await delay(400);
+  if(result.stats.totalNegFixed>0) {
+    Object.entries(result.stats.negativeFixes).forEach(([col,info])=>log(`Fixed ${info.count} invalid (<=0) in "${col}" → replaced with median ${info.medianUsed}`,'fix'));
+  } else {
+    log('No invalid negatives found','ok');
+  }
+  setProgress(86,'Step 6 — Detecting outliers (IQR)…');
+
+  await delay(350);
+  const outliers=result.stats.outlierFlags;
+  if(Object.keys(outliers).length)
+    Object.entries(outliers).forEach(([col,n])=>log(`Outliers in "${col}": ${n} values (flagged, rows kept)`,'warn'));
+  else log('No significant outliers detected','ok');
+
+  populateOutlierGrid(outliers);
+  setProgress(100,'✅ Pipeline complete');
+  log(`Output: ${result.stats.cleanedRows} rows × ${result.stats.remainingCols} columns`,'ok');
+
+  await delay(300);
+  populateResultsPanel(result.stats);
+  renderTable(S.cleanHeaders,S.cleanData,'clean-table',50);
+  populateExportPanel(result.stats);
+  generateReport(issues,result.stats);
+  toast('Pipeline complete!','✅');
+}
+
+function delay(ms){ return new Promise(r=>setTimeout(r,ms)); }
+
+// ── Quality Panel ─────────────────────────────────────────────────────────────
+function populateQualityPanel(issues) {
+  const {totalRows,totalCols,totalNulls,allNullCols,duplicates,invalidNegCounts,nullCounts,numericCols}=issues;
+  const negTotal=Object.values(invalidNegCounts).reduce((a,b)=>a+b,0);
+
+  document.getElementById('qc-stats').innerHTML=`
+    <div class="stat-box blue"><div class="stat-label">Total Rows</div><div class="stat-value">${totalRows.toLocaleString()}</div></div>
+    <div class="stat-box blue"><div class="stat-label">Total Columns</div><div class="stat-value">${totalCols}</div></div>
+    <div class="stat-box ${totalNulls>0?'warn':'green'}"><div class="stat-label">Total Nulls</div><div class="stat-value">${totalNulls}</div></div>
+    <div class="stat-box ${duplicates>0?'warn':'green'}"><div class="stat-label">Duplicates</div><div class="stat-value">${duplicates}</div></div>
+    <div class="stat-box ${allNullCols.length>0?'danger':'green'}"><div class="stat-label">All-Null Cols</div><div class="stat-value">${allNullCols.length}</div></div>
+    <div class="stat-box ${negTotal>0?'orange':'green'}"><div class="stat-label">Invalid ≤0</div><div class="stat-value">${negTotal}</div><div class="stat-sub">in positive cols</div></div>
+  `;
+
+  const actions=[];
+  if(allNullCols.length) actions.push({icon:'🗑',text:`Drop ${allNullCols.length} all-null column(s)`,tag:'red',detail:allNullCols.join(', ')});
+  const partial=Object.entries(nullCounts).filter(([k,v])=>v>0&&v<totalRows);
+  if(partial.length) actions.push({icon:'🔧',text:`Fill NaN in ${partial.length} column(s) with median`,tag:'yellow',detail:partial.map(([k])=>k).join(', ')});
+  if(negTotal>0) actions.push({icon:'🔴',text:`Fix ${negTotal} invalid (≤0) values → replace with median`,tag:'orange',detail:Object.keys(invalidNegCounts).join(', ')});
+  if(duplicates) actions.push({icon:'🧹',text:`Remove ${duplicates} duplicate row(s)`,tag:'yellow'});
+  actions.push({icon:'🔍',text:'Flag outliers via IQR — no rows removed',tag:'blue'});
+
+  document.getElementById('qc-actions').innerHTML=actions.map(a=>`
+    <div class="report-row">
+      <div class="report-key">${a.icon}&nbsp;${a.text}${a.detail?`<div style="font-size:11px;color:var(--muted);margin-top:4px;font-family:var(--mono)">${a.detail.slice(0,90)}${a.detail.length>90?'…':''}</div>`:''}</div>
+      <span class="tag tag-${a.tag==='red'?'red':a.tag==='yellow'?'yellow':a.tag==='orange'?'orange':'blue'}">${a.tag==='red'?'DROP':a.tag==='orange'?'FIX':a.tag==='yellow'?'CLEAN':'FLAG'}</span>
+    </div>
+  `).join('');
+
+  // Null bars
+  const sorted=Object.entries(nullCounts).sort((a,b)=>b[1]-a[1]).slice(0,15);
+  document.getElementById('null-bars').innerHTML=sorted.map(([col,n])=>{
+    const pct=n/totalRows;
+    const cls=pct===1?'bad':pct>0.3?'warn':'ok';
+    return `<div class="qbar-row">
+      <div class="qbar-label" title="${col}">${col.length>22?col.slice(0,20)+'…':col}</div>
+      <div class="qbar-track"><div class="qbar-fill ${cls}" style="width:${Math.max(pct*100,1)}%"></div></div>
+      <div class="qbar-count">${n} (${(pct*100).toFixed(1)}%)</div>
+    </div>`;
+  }).join('');
+
+  // Negative bars
+  const negEntries=Object.entries(invalidNegCounts);
+  document.getElementById('neg-bars').innerHTML = negEntries.length
+    ? negEntries.map(([col,n])=>`
+        <div class="report-row">
+          <div class="report-key">🔴 <strong>${col}</strong><div style="font-size:11px;color:var(--muted);margin-top:2px">Auto-detected as always-positive column</div></div>
+          <span class="tag tag-orange">${n} invalid</span>
+        </div>`).join('')
+    : '<div class="report-row" style="color:var(--accent)">✅ No invalid negatives/zeros detected</div>';
+}
+
+// ── Outlier Grid ──────────────────────────────────────────────────────────────
+function populateOutlierGrid(outliers) {
+  const entries=Object.entries(outliers);
+  document.getElementById('outlier-grid').innerHTML = entries.length
+    ? entries.map(([col,n])=>`<div class="report-row"><div class="report-key">🔶 ${col}</div><span class="tag tag-yellow">${n} value${n>1?'s':''} (kept)</span></div>`).join('')
+    : '<div class="report-row" style="color:var(--accent)">✅ No outliers detected</div>';
+}
+
+// ── Results Panel ─────────────────────────────────────────────────────────────
+function populateResultsPanel(stats) {
+  document.getElementById('result-stats').innerHTML=`
+    <div class="stat-box green"><div class="stat-label">Clean Rows</div><div class="stat-value">${stats.cleanedRows.toLocaleString()}</div><div class="stat-sub">${stats.duplicatesRemoved?stats.duplicatesRemoved+' removed':'no rows removed'}</div></div>
+    <div class="stat-box blue"><div class="stat-label">Clean Columns</div><div class="stat-value">${stats.remainingCols}</div><div class="stat-sub">${stats.originalCols-stats.remainingCols} all-null dropped</div></div>
+    <div class="stat-box ${stats.duplicatesRemoved?'warn':'green'}"><div class="stat-label">Duplicates Removed</div><div class="stat-value">${stats.duplicatesRemoved}</div></div>
+    <div class="stat-box ${stats.nullFilled?'warn':'green'}"><div class="stat-label">NaN Filled</div><div class="stat-value">${stats.nullFilled}</div><div class="stat-sub">with column median</div></div>
+    <div class="stat-box ${stats.totalNegFixed?'orange':'green'}"><div class="stat-label">Negatives Fixed</div><div class="stat-value">${stats.totalNegFixed}</div><div class="stat-sub">replaced with median</div></div>
+    <div class="stat-box ${Object.keys(stats.outlierFlags).length?'warn':'green'}"><div class="stat-label">Outlier Flags</div><div class="stat-value">${Object.values(stats.outlierFlags).reduce((a,b)=>a+b,0)}</div><div class="stat-sub">rows kept</div></div>
+  `;
+}
+
+// ── Export Panel ──────────────────────────────────────────────────────────────
+function populateExportPanel(stats) {
+  document.getElementById('final-summary').innerHTML=[
+    ['Source file', S.fileName],
+    ['Original shape', `${stats.originalRows} rows × ${stats.originalCols} cols`],
+    ['Clean shape', `${stats.cleanedRows} rows × ${stats.remainingCols} cols`],
+    ['Columns dropped', stats.allNullColsDropped.length?stats.allNullColsDropped.join(', ').slice(0,60):'None'],
+    ['Duplicates removed', stats.duplicatesRemoved],
+    ['NaN values filled', `${stats.nullFilled} (method: column median)`],
+    ['Negatives fixed', `${stats.totalNegFixed} (method: column median)`],
+    ['Outlier detection', 'IQR — flagged, rows kept'],
+  ].map(([k,v])=>`<div class="report-row"><div class="report-key">${k}</div><div class="report-val">${v}</div></div>`).join('');
+}
+
+// ── Report ────────────────────────────────────────────────────────────────────
+function generateReport(issues, stats) {
+  const lines=[
+    '='.repeat(54),'        DATA QUALITY PIPELINE REPORT','='.repeat(54),
+    `File             : ${S.fileName}`,
+    `Original Rows    : ${stats.originalRows}`,
+    `Original Cols    : ${stats.originalCols}`,
+    `Clean Rows       : ${stats.cleanedRows}`,
+    `Clean Cols       : ${stats.remainingCols}`,
+    `Duplicates Removed: ${stats.duplicatesRemoved}`,
+    `NaN Filled        : ${stats.nullFilled} (method: median)`,
+    `Negatives Fixed   : ${stats.totalNegFixed} (method: median)`,
+    '',
+    '── All-Null Columns Dropped ──',
+    issues.allNullCols.length ? issues.allNullCols.map(c=>'  '+c).join('\n') : '  None',
+    '',
+    '── Null Counts per Column ──',
+    ...Object.entries(issues.nullCounts).filter(([,n])=>n>0).map(([k,n])=>`  ${k}: ${n} (${(n/stats.originalRows*100).toFixed(1)}%)`),
+    '',
+    '── Invalid (<=0) Values Fixed ──',
+    Object.keys(stats.negativeFixes).length
+      ? Object.entries(stats.negativeFixes).map(([k,v])=>`  ${k}: ${v.count} values -> replaced with median ${v.medianUsed}`).join('\n')
+      : '  None',
+    '',
+    '── Outlier Flags (IQR) ──',
+    Object.keys(stats.outlierFlags).length
+      ? Object.entries(stats.outlierFlags).map(([k,n])=>`  ${k}: ${n} values (rows kept)`).join('\n')
+      : '  None detected',
+    '='.repeat(54),
+  ];
+  S.report=lines.join('\n');
+}
+
+// ── Downloads ─────────────────────────────────────────────────────────────────
+function downloadCSV(){
+  if(!S.cleanData.length){toast('Run pipeline first','⚠️');return;}
+  const h=S.cleanHeaders;
+  const rows=[h.join(','),...S.cleanData.map(r=>h.map(c=>JSON.stringify(r[c]??'')).join(','))];
+  dl(rows.join('\n'),'cleaned_output.csv','text/csv');
+  toast('Downloaded cleaned_output.csv','⬇️');
+}
+function downloadReport(){
+  if(!S.report){toast('Run pipeline first','⚠️');return;}
+  dl(S.report,'data_quality_report.txt','text/plain');
+  toast('Downloaded report','⬇️');
+}
+function downloadSQL(){
+  if(!S.cleanData.length){toast('Run pipeline first','⚠️');return;}
+  const h=S.cleanHeaders;
+  const cols=h.map(c=>`"${c}"`).join(', ');
+  const inserts=S.cleanData.map(r=>{
+    const vals=h.map(c=>{ const v=r[c]; if(!v&&v!==0) return 'NULL'; return isNaN(v)?`'${String(v).replace(/'/g,"''")}'`:v; }).join(', ');
+    return `INSERT INTO cleaned_data (${cols}) VALUES (${vals});`;
+  });
+  dl(inserts.join('\n'),'insert.sql','text/plain');
+  toast('Downloaded insert.sql','⬇️');
+}
+function dl(content,filename,mime){
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob([content],{type:mime}));
+  a.download=filename; a.click();
+}
+
+// ── Clear ─────────────────────────────────────────────────────────────────────
+function clearAll(){
+  S={rawData:[],cleanData:[],headers:[],cleanHeaders:[],fileName:'',stats:null,issues:null,report:''};
+  document.getElementById('file-input').value='';
+  document.getElementById('file-pill').style.display='none';
+  document.getElementById('header-file').textContent='No file loaded';
+  document.getElementById('run-btn').disabled=true;
+  document.getElementById('preview-card').style.display='none';
+  document.getElementById('log-box').innerHTML='<div class="log-line"><span class="log-time">--:--:--</span><span class="log-level-info">INFO&nbsp;</span><span>&nbsp;Waiting to start…</span></div>';
+  setProgress(0,'Idle');
+  goStep(0);
+  toast('Cleared!','🗑');
+}
+</script>
+</body>
+</html>
